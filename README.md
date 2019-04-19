@@ -2,11 +2,9 @@
 
 Show CircleCI Build Status.
 
-![](./image1.png)
-
-![](./image2.png)
-
-![](./image3.png)
+<img src="./image1.png" width="400"/>
+<img src="./image2.png" width="400"/>
+<img src="./image3.png" width="400"/>
 
 ## Install
 
