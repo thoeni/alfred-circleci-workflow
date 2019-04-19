@@ -6,18 +6,21 @@ import (
 	"fmt"
 	"io/ioutil"
 	"net/http"
+	"os"
 	"strings"
+	"time"
 )
 
-type Recentbuild struct {
+type build struct {
 	Branch          string `json:"branch"`
-	BuildUrl        string `json:"build_url"`
+	BuildURL        string `json:"build_url"`
 	StartTime       string `json:"start_time"`
 	BuildTimeMillis int    `json:"build_time_millis"`
 	Status          string `json:"status"`
 	BuildNum        int    `json:"build_num"`
 	UserName        string `json:"username"`
 	RepoName        string `json:"reponame"`
+	CommitterName   string `json:"committer_name"`
 }
 
 type Items struct {
@@ -35,33 +38,92 @@ type icon struct {
 	Path string `json:"path"`
 }
 
-func circleci() {
-	var token *string = flag.String("t", "secret", "CirclCI Token")
-	var filter *string = flag.String("f", "reponame, branch, username, status...", "Search Filter")
+func main() {
+	var token = flag.String("t", "secret", "CircleCI Token")
+	var username = flag.String("u", "", "Username")
+	var reponame = flag.String("r", "", "Reponame")
+	var filter = flag.String("f", "", "Search Filter")
 	flag.Parse()
 
-	url := "https://circleci.com/api/v1.1/recent-builds?circle-token=" + *token
+	var r []build
+	switch {
+	case *username != "" && *reponame != "":
+		r = search(*token, *username, *reponame)
+	default:
+		r = getRecent(*token)
+	}
 
-	client := &http.Client{}
+	items := filterItems(r, *filter)
+
+	j, err := json.Marshal(Items{Item: items})
+	if err != nil {
+		fmt.Println("cannot marshal alfred response")
+		os.Exit(1)
+	}
+	fmt.Println(string(j))
+}
+
+func getRecent(token string) []build {
+	url := fmt.Sprintf("https://circleci.com/api/v1.1/recent-builds?circle-token=%s&shallow=true", token)
+	return query(url)
+}
+
+func search(token, user, repository string) []build {
+	url := fmt.Sprintf("https://circleci.com/api/v1.1/project/github/%s/%s?circle-token=%s&shallow=true&limit=30", user, repository, token)
+	return query(url)
+}
+
+func query(url string) []build {
+	client := &http.Client{
+		Timeout: 5 * time.Second,
+	}
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Add("Accept", "application/json")
-	res, _ := client.Do(req)
+
+	res, err := client.Do(req)
+	if err != nil {
+		fmt.Println("error while making the call:", err)
+		os.Exit(1)
+	}
 	defer res.Body.Close()
 
-	body, _ := ioutil.ReadAll(res.Body)
+	if res.StatusCode != http.StatusOK {
+		fmt.Println("status code was:", res.Status)
+		os.Exit(1)
+	}
 
-	var r []Recentbuild
-	json.Unmarshal(body, &r)
+	body, err := ioutil.ReadAll(res.Body)
+	if err != nil {
+		fmt.Println("error while reading the body:", err)
+		os.Exit(1)
+	}
 
+	var r []build
+	err = json.Unmarshal(body, &r)
+	if err != nil {
+		fmt.Println("cannot unmarshal circleci response")
+		os.Exit(1)
+	}
+
+	return r
+}
+
+func filterItems(builds []build, filter string) []Item {
 	var items []Item
-	for _, v := range r {
-		if strings.Contains(v.RepoName+v.Branch+v.Status+v.UserName, *filter) {
+	for _, v := range builds {
+		if strings.Contains(v.RepoName+v.Branch+v.Status+v.CommitterName, filter) {
 			title := "#" + fmt.Sprint(v.BuildNum) +
 				" / " + v.RepoName +
 				" / " + v.Branch
 
 			sec := v.BuildTimeMillis / 1000
-			subtitle := "user: " + v.UserName +
+
+			user := v.CommitterName
+			if user == "" {
+				user = v.UserName
+			}
+
+			subtitle := "user: " + user +
 				" / start: " + v.StartTime +
 				" / buildtime: " + fmt.Sprint(sec) + "sec"
 
@@ -81,15 +143,10 @@ func circleci() {
 			items = append(items, Item{
 				Title:    title,
 				Subtitle: subtitle,
-				Arg:      v.BuildUrl,
+				Arg:      v.BuildURL,
 				Icon:     icon{Path: color + ".png"}})
 		}
 	}
 
-	j, _ := json.Marshal(Items{Item: items})
-	fmt.Println(string(j))
-}
-
-func main() {
-	circleci()
+	return items
 }
