@@ -42,15 +42,16 @@ func main() {
 	var token = flag.String("t", "secret", "CircleCI Token")
 	var username = flag.String("u", "", "Username")
 	var reponame = flag.String("r", "", "Reponame")
+	var limit = flag.Int("l", 30, "Limit")
 	var filter = flag.String("f", "", "Search Filter")
 	flag.Parse()
 
 	var r []build
 	switch {
 	case *username != "" && *reponame != "":
-		r = search(*token, *username, *reponame)
+		r = search(*token, *username, *reponame, *limit)
 	default:
-		r = getRecent(*token)
+		r = getRecent(*token, *limit)
 	}
 
 	items := filterItems(r, *filter)
@@ -63,13 +64,13 @@ func main() {
 	fmt.Println(string(j))
 }
 
-func getRecent(token string) []build {
-	url := fmt.Sprintf("https://circleci.com/api/v1.1/recent-builds?circle-token=%s&shallow=true", token)
+func getRecent(token string, limit int) []build {
+	url := fmt.Sprintf("https://circleci.com/api/v1.1/recent-builds?circle-token=%s&shallow=true&limit=%d", token, limit)
 	return query(url)
 }
 
-func search(token, user, repository string) []build {
-	url := fmt.Sprintf("https://circleci.com/api/v1.1/project/github/%s/%s?circle-token=%s&shallow=true&limit=30", user, repository, token)
+func search(token, user, repository string, limit int) []build {
+	url := fmt.Sprintf("https://circleci.com/api/v1.1/project/github/%s/%s?circle-token=%s&shallow=true&limit=%d", user, repository, token, limit)
 	return query(url)
 }
 
